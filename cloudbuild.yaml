@@ -1,0 +1,49 @@
+substitutions:
+  _BUCKET: terraform-state-bucket-default
+  _TERRAFORM_VERSION_: 0.13.5
+  _REGION: europe-west1
+
+steps:
+  - id: 'Create bucket for storing Terraform state file'
+    name: 'gcr.io/cloud-builders/gsutil'
+    entrypoint: 'bash'
+    args:
+      - '-ec'
+      - |
+        gsutil ls gs://${_BUCKET} || gsutil mb -l ${_REGION} gs://${_BUCKET}
+  - id: 'Set Terraform service account credentials'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud secrets versions access latest --secret=terraform-secret-default > /workspace/credentials.json
+  - name: 'hashicorp/terraform:${_TERRAFORM_VERSION_}'
+    entrypoint: 'sh'
+    args:
+    - '-c'
+    - |
+        terraform init
+    env:
+      - GOOGLE_APPLICATION_CREDENTIALS=/workspace/credentials.json
+  - name: 'hashicorp/terraform:${_TERRAFORM_VERSION_}'
+    args:
+    - fmt
+    - -check
+
+  - name: 'hashicorp/terraform:${_TERRAFORM_VERSION_}'
+    args: 
+    - plan
+    - -var-file=default.tfvars
+    - -var-file=dev.tfvars
+    - -out=default.plan
+    env:
+      - GOOGLE_APPLICATION_CREDENTIALS=/workspace/credentials.json
+
+  - name: 'hashicorp/terraform:${_TERRAFORM_VERSION_}'
+    entrypoint: 'sh'
+    args:
+    - apply 
+    - default.plan
+    env:
+      - GOOGLE_APPLICATION_CREDENTIALS=/workspace/credentials.json
